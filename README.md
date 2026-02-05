@@ -24,8 +24,7 @@ Complete example of integrating CloudAuth into your C# Windows Forms application
 
 1. Open Visual Studio
 2. Click "Open a project or solution"
-3. Navigate to: `C:\xampp\htdocs\Cloud Auth\examples\csharp\`
-4. Open `CloudAuthExample.sln`
+3. Open `CloudAuthExample.sln`
 
 ### 2. Restore NuGet Packages
 
@@ -41,7 +40,7 @@ private const string APP_KEY = "YOUR_APP_KEY_HERE";
 ```
 
 **Where to get your App Key:**
-1. Login to CloudAuth dashboard: `http://localhost/Cloud%20Auth/`
+1. Login to CloudAuth dashboard: `https://cloudauthx.xyz/`
 2. Go to "Applications" page
 3. Create a new application or use existing one
 4. Copy the **App Key**
@@ -56,20 +55,13 @@ private const string APP_KEY = "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4
 If your CloudAuth is hosted elsewhere:
 
 ```csharp
-private const string BASE_URL = "http://localhost/Cloud%20Auth";
-// Change to: http://yourdomain.com or http://192.168.1.100/CloudAuth
+private const string BASE_URL = "https://cloudauthx.xyz/";
 ```
 
 ### 5. Build and Run
 
 1. Press `F5` or click "Start" in Visual Studio
 2. The login form will appear
-
-## Testing the Application
-
-### Step 1: Create a Test License
-
-You need a valid license key to test. Two methods:
 
 #### Method A: Via Dashboard
 1. Login to CloudAuth dashboard
@@ -78,31 +70,6 @@ You need a valid license key to test. Two methods:
 4. You'll need to use the API to create licenses (next step)
 
 #### Method B: Via Postman/API
-
-```http
-POST http://localhost/Cloud%20Auth/api/license/create.php
-Content-Type: application/json
-
-{
-    "app_key": "YOUR_APP_KEY",
-    "app_secret": "YOUR_APP_SECRET",
-    "username": "testuser",
-    "email": "test@example.com",
-    "expiry_days": 30
-}
-```
-
-**Response:**
-```json
-{
-    "success": true,
-    "data": {
-        "license_key": "A1B2C-D3E4F-G5H6I-J7K8L-M9N0O",
-        "username": "testuser",
-        "expires_at": "2026-02-22 10:30:00"
-    }
-}
-```
 
 ### Step 2: Test the Application
 
