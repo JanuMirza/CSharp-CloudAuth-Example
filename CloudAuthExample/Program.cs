@@ -1,11 +1,13 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace CloudAuthExample
 {
     class Program
     {
-        private static class CloudConfig
+        private static volatile bool _sessionKilled = false;
+            private static class CloudConfig
         {
             public static readonly string BaseUrl = "https://cloudauthx.xyz/";
             public static readonly string AppName = "Appliction Name";
@@ -26,15 +28,15 @@ namespace CloudAuthExample
             Console.WriteLine("\n[INFO] Initializing CloudAuth Client...");
             Console.ResetColor();
             
-          
+            bool secureMode = true; // Enable secure mode by default
             
             var client = new CloudAuthClient(
-                CloudConfig.BaseUrl,
-                CloudConfig.AppName,
-                CloudConfig.AppKey,
-                CloudConfig.AppSecret,
-                CloudConfig.Version,
-                CloudConfig.secureMode
+                AppConfig.BaseUrl,
+                AppConfig.AppName,
+                AppConfig.AppKey,
+                AppConfig.AppSecret,
+                AppConfig.Version,
+                secureMode
             );
             // Display Hardware ID
             string hwid = client.GetHardwareId();
@@ -136,7 +138,7 @@ namespace CloudAuthExample
                     Console.Write("✓ ");
                     DisplayExpiryInfo(loginResult.data?.expires_at);
                     
-                    RunProtectedApplication(loginResult.data?.username ?? "User", loginResult.data);
+                    RunProtectedApplication(client, loginResult.data?.username ?? "User", loginResult.data);
                     return;
                 }
                 else
@@ -250,8 +252,9 @@ namespace CloudAuthExample
             Console.ResetColor();
         }
         
-        static void RunProtectedApplication(string username, LoginData? userData = null)
+        static void RunProtectedApplication(CloudAuthClient client, string username, LoginData? userData = null)
         {
+            _sessionKilled = false;
             Console.Clear();
             Console.ForegroundColor = ConsoleColor.Green;
             Console.WriteLine(@"
@@ -262,35 +265,57 @@ namespace CloudAuthExample
 ╚══════════════════════════════════════════════════════════════╝
 ");
             Console.ResetColor();
-            
+
             Console.ForegroundColor = ConsoleColor.Cyan;
             Console.WriteLine($"\n🎉 Welcome to the protected application, {username}!");
             Console.ResetColor();
-            
+
             Console.WriteLine("\n" + new string('-', 60));
             Console.ForegroundColor = ConsoleColor.White;
             Console.WriteLine("This is your protected application area.");
             Console.WriteLine("Only users with valid licenses can access this section.");
             Console.ResetColor();
             Console.WriteLine(new string('-', 60));
-            
+
+            // Start heartbeat monitoring — if admin kills the session,
+            // the app will be force-closed.
+            client.StartHeartbeat(15, () => {
+                _sessionKilled = true;
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("\n\n╔════════════════════════════════════════════════════════════╗");
+                Console.WriteLine("║              ✗ SESSION TERMINATED BY ADMIN ✗               ║");
+                Console.WriteLine("╚════════════════════════════════════════════════════════════╝");
+                Console.WriteLine("\nYour session has been terminated by an administrator.");
+                Console.ResetColor();
+                Environment.Exit(1);
+            });
+
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine("[SECURITY] Session monitoring: ACTIVE ✓ (heartbeat every 15s)");
+            Console.ResetColor();
+
             Console.ForegroundColor = ConsoleColor.Yellow;
             Console.WriteLine("\nAvailable Commands:");
             Console.ForegroundColor = ConsoleColor.White;
             Console.WriteLine("  1. Show User Info");
             Console.WriteLine("  2. Check License Status");
             Console.WriteLine("  3. View Application Info");
-            Console.WriteLine("  4. Logout");
+            Console.WriteLine("  4. View Variables");
+            Console.WriteLine("  5. Logout");
             Console.ResetColor();
-            
+
             while (true)
             {
+                if (_sessionKilled) break;
+
                 Console.ForegroundColor = ConsoleColor.Cyan;
-                Console.Write("\nEnter command (1-4): ");
+                Console.Write("\nEnter command (1-5): ");
                 Console.ForegroundColor = ConsoleColor.Yellow;
                 string? input = Console.ReadLine();
                 Console.ResetColor();
-                
+
+                if (_sessionKilled) break;
+
                 switch (input)
                 {
                     case "1":
@@ -310,7 +335,7 @@ namespace CloudAuthExample
                         Console.WriteLine($"  Access Level: Premium");
                         Console.ResetColor();
                         break;
-                        
+
                     case "2":
                         Console.ForegroundColor = ConsoleColor.Cyan;
                         Console.WriteLine("\n[License Status]");
@@ -334,25 +359,63 @@ namespace CloudAuthExample
                             Console.ResetColor();
                         }
                         break;
-                        
+
                     case "3":
                         Console.ForegroundColor = ConsoleColor.Cyan;
                         Console.WriteLine("\n[Application Info]");
-                        Console.WriteLine($"  App Name: {CloudConfig.AppName}");
-                        Console.WriteLine($"  Version: {CloudConfig.Version}");
+                        Console.WriteLine($"  App Name: {AppConfig.AppName}");
+                        Console.WriteLine($"  Version: {AppConfig.Version}");
                         Console.WriteLine($"  Protected By: CloudAuth");
                         Console.ResetColor();
                         break;
-                        
+
                     case "4":
+                        Console.ForegroundColor = ConsoleColor.Cyan;
+                        Console.WriteLine("\n[Variables]");
+                        Console.ResetColor();
+                        if (userData != null)
+                        {
+                            Console.ForegroundColor = ConsoleColor.Yellow;
+                            Console.WriteLine("  Global Variables:");
+                            Console.ResetColor();
+                            if (userData.global_variables != null && userData.global_variables.Count > 0)
+                            {
+                                foreach (var kvp in userData.global_variables)
+                                    Console.WriteLine($"    {kvp.Key} = {kvp.Value}");
+                            }
+                            else
+                            {
+                                Console.WriteLine("    (none)");
+                            }
+                            Console.ForegroundColor = ConsoleColor.Yellow;
+                            Console.WriteLine("  User Variables:");
+                            Console.ResetColor();
+                            if (userData.user_variables != null && userData.user_variables.Count > 0)
+                            {
+                                foreach (var kvp in userData.user_variables)
+                                    Console.WriteLine($"    {kvp.Key} = {kvp.Value}");
+                            }
+                            else
+                            {
+                                Console.WriteLine("    (none)");
+                            }
+                        }
+                        else
+                        {
+                            Console.WriteLine("  No login data available");
+                        }
+                        break;
+
+                    case "5":
                         Console.ForegroundColor = ConsoleColor.Yellow;
                         Console.WriteLine("\n[*] Logging out...");
                         Console.ResetColor();
+                        client.StopHeartbeat();
                         return;
-                        
+
                     default:
                         Console.ForegroundColor = ConsoleColor.Red;
-                        Console.WriteLine("\n[ERROR] Invalid command. Please enter 1-4.");
+                        Console.WriteLine("\n[ERROR] Invalid command. Please enter 1-5.");
                         Console.ResetColor();
                         break;
                 }
@@ -427,7 +490,7 @@ namespace CloudAuthExample
                 SaveCredentials(username, password);
                 
                 // Run protected app with full user data
-                RunProtectedApplication(result.data?.username ?? "User", result.data);
+                RunProtectedApplication(client, result.data?.username ?? "User", result.data);
                 return true;
             }
             else
