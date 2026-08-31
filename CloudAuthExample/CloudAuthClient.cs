@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Net.Http;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Management;
 using System.Security.Cryptography;
@@ -17,6 +19,12 @@ namespace CloudAuthExample
         private readonly string _version;
         private readonly HttpClient _httpClient;
         public bool SecureMode { get; set; }
+
+        // Session monitoring
+        private string _sessionToken = "";
+        private Thread _heartbeatThread;
+        private volatile bool _heartbeatRunning;
+        private Action _onSessionKilled;
 
         public CloudAuthClient(string baseUrl, string appName, string appKey, string appSecret, string version, bool secureMode = true)
         {
@@ -135,6 +143,10 @@ namespace CloudAuthExample
                 var responseText = await response.Content.ReadAsStringAsync();
 
                 var result = JsonConvert.DeserializeObject<LoginResponse>(responseText);
+                if (result?.success == true && result.data != null)
+                {
+                    _sessionToken = result.data.session_token ?? "";
+                }
                 return result ?? new LoginResponse { success = false, message = "Invalid response" };
             }
             catch (Exception ex)
@@ -285,6 +297,69 @@ namespace CloudAuthExample
         {
             return DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         }
+
+        // ── Heartbeat / Session Monitoring ──────────────────────────
+
+        public bool Heartbeat()
+        {
+            if (string.IsNullOrEmpty(_sessionToken))
+                return false;
+
+            try
+            {
+                var requestData = new
+                {
+                    app_name = _appName,
+                    app_key = _appKey,
+                    app_secret = _appSecret,
+                    session_token = _sessionToken,
+                    hwid = GetHardwareId()
+                };
+
+                var json = JsonConvert.SerializeObject(requestData);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                var response = _httpClient.PostAsync(_baseUrl + "api/license/heartbeat.php", content).Result;
+                var responseText = response.Content.ReadAsStringAsync().Result;
+
+                var result = JsonConvert.DeserializeObject<LoginResponse>(responseText);
+                return result?.success == true;
+            }
+            catch
+            {
+                // Network error — don't kill the app on transient failures
+                return true;
+            }
+        }
+
+        public void StartHeartbeat(int intervalSeconds = 15, Action onKilled = null)
+        {
+            _onSessionKilled = onKilled;
+            _heartbeatRunning = true;
+
+            _heartbeatThread = new Thread(() =>
+            {
+                while (_heartbeatRunning)
+                {
+                    Thread.Sleep(intervalSeconds * 1000);
+                    if (!_heartbeatRunning) break;
+
+                    if (!Heartbeat())
+                    {
+                        _heartbeatRunning = false;
+                        _onSessionKilled?.Invoke();
+                        break;
+                    }
+                }
+            });
+            _heartbeatThread.IsBackground = true;
+            _heartbeatThread.Start();
+        }
+
+        public void StopHeartbeat()
+        {
+            _heartbeatRunning = false;
+        }
     }
 
     public class LicenseVerifyResponse
@@ -365,5 +440,8 @@ namespace CloudAuthExample
         public string license_key { get; set; } = "";
         public string expires_at { get; set; } = "";
         public string last_login { get; set; } = "";
+        public string session_token { get; set; } = "";
+        public Dictionary<string, string> global_variables { get; set; } = new Dictionary<string, string>();
+        public Dictionary<string, string> user_variables { get; set; } = new Dictionary<string, string>();
     }
 }
